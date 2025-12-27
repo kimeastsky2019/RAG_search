@@ -1,0 +1,8 @@
+.DS_Store
+.venv/
+node_modules/
+dist/
+*.log
+__pycache__/
+Rag-extended/__pycache__/
+Rag-extended/rag.db

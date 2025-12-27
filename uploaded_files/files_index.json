@@ -1,0 +1,46 @@
+{
+  "documents": [],
+  "tables_parsed": [],
+  "tables_source_info": [],
+  "images": [],
+  "summary": {
+    "total_files": 3,
+    "by_category": {
+      "documents": 0,
+      "tables_parsed": 0,
+      "tables_source_info": 0,
+      "images": 0,
+      "document": 3
+    },
+    "processing_time": null
+  },
+  "document": [
+    {
+      "original_name": "requirements",
+      "file_name": "requirements.md",
+      "file_path": "/workspace/uploaded_system/uploaded_files/documents/requirements.md",
+      "file_type": "txt",
+      "category": "document",
+      "summary": "Processed requirements for coding",
+      "source_id": "2004027027087626240"
+    },
+    {
+      "original_name": "README",
+      "file_name": "README.md",
+      "file_path": "/workspace/uploaded_system/uploaded_files/documents/README.md",
+      "file_type": "md",
+      "category": "document",
+      "summary": "Processed README for coding",
+      "source_id": "2004027027087626241"
+    },
+    {
+      "original_name": "grok_rag_implementation_guide",
+      "file_name": "grok_rag_implementation_guide.md",
+      "file_path": "/workspace/uploaded_system/uploaded_files/documents/grok_rag_implementation_guide.md",
+      "file_type": "pdf",
+      "category": "document",
+      "summary": "Processed grok_rag_implementation_guide for coding",
+      "source_id": "2004027109738889216"
+    }
+  ]
+}
