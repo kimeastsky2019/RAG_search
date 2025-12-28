@@ -6,3 +6,4 @@ dist/
 __pycache__/
 Rag-extended/__pycache__/
 Rag-extended/rag.db
+Rag-extended/.env
