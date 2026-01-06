@@ -11,6 +11,7 @@ from datetime import timedelta
 from typing import Optional
 import uuid
 import time
+import os
 from xai_sdk import AsyncClient
 
 from config import XAI_API_KEY, XAI_MANAGEMENT_API_KEY, XAI_MODEL, COST_PER_1M_INPUT, COST_PER_1M_OUTPUT
@@ -49,11 +50,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Grok RAG Extended API", lifespan=lifespan)
 
 # Add CORS
+# In production, replace "*" with specific allowed origins
+allowed_origins = os.getenv("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins if "*" not in allowed_origins else ["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -428,6 +431,10 @@ async def delete_document(
     
     return {"status": "deleted", "id": document_id}
 
+# File upload limits
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md", ".docx", ".doc", ".jpg", ".jpeg", ".png", ".gif"}
+
 @app.post("/collections/{collection_id}/upload")
 async def upload_document(
     collection_id: int,
@@ -436,6 +443,9 @@ async def upload_document(
     tags: Optional[str] = Form(None),
     version: Optional[str] = Form(None),
     date: Optional[str] = Form(None),
+    relatedDocs: Optional[str] = Form(None),
+    relationship_note: Optional[str] = Form(None),
+    policy_note: Optional[str] = Form(None),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
@@ -447,14 +457,40 @@ async def upload_document(
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")
 
+    # Validate filename
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+    
+    # Validate file extension
+    import os
+    file_ext = os.path.splitext(file.filename.lower())[1]
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"File type not allowed. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"
+        )
+
     # Read file content
     content = await file.read()
+    
+    # Validate file size
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File size exceeds maximum allowed size of {MAX_FILE_SIZE / (1024 * 1024):.0f} MB"
+        )
+    
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="File is empty")
     
     metadata = build_metadata(
         category=category,
         tags=tags,
         version=version,
         date=date,
+        related_docs=relatedDocs,
+        relationship_note=relationship_note,
+        policy_note=policy_note,
     )
 
     # Upload to xAI
@@ -466,7 +502,7 @@ async def upload_document(
             "data": content,
         }
         if metadata:
-            upload_kwargs["metadata"] = metadata
+            upload_kwargs["metadata_dict"] = metadata
         upload_resp = await mgmt_client.collections.upload_document(**upload_kwargs)
         xai_doc_id = extract_document_id(upload_resp)
         if not xai_doc_id:
@@ -483,6 +519,7 @@ async def upload_document(
     )
     session.add(doc)
     await session.commit()
+    await session.refresh(doc)
     
     return {"status": "uploaded", "document_id": doc.id, "xai_doc_id": xai_doc_id}
 
