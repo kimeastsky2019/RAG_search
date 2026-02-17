@@ -9,6 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, Upload, Brain, Zap, FileText, MessageSquare, Settings, BarChart3, LogIn, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api, ChatResponse, Collection } from "@/lib/api";
+
+
+
 import { toast } from "sonner";
 import Header from "@/components/Header"; // Import Header
 
@@ -560,19 +563,58 @@ const Index = () => {
           </div>
         </div>
       </section>
+      {/* New Highlight Sections */}
+      <section className="py-20 px-4 bg-gradient-to-br from-primary/10 to-background text-center">
+        <h2 className="text-4xl font-bold mb-8 gradient-text">전문가 풀 (SME) 강조</h2>
+        <p className="text-lg text-muted-foreground mb-6 max-w-2xl mx-auto">
+          전문가 중심의 관계 의미성 구축합니다.
+        </p>
+        <img src="/oag/assets/sme_pool.png" alt="SME Pool" className="mx-auto mb-8 w-96 h-auto rounded-xl shadow-lg glass-effect hover:scale-105 transition-transform duration-500" onError={(e) => {
+          const target = e.target as HTMLImageElement;
+          target.src = "/assets/sme_pool.png";
+        }} />
+      </section>
+
+      <section className="py-20 px-4 bg-muted/30 text-center">
+        <h2 className="text-4xl font-bold mb-8 gradient-text">피드백 루프 시각화</h2>
+        <p className="text-lg text-muted-foreground mb-6 max-w-2xl mx-auto">
+          휴먼인 루프를 활용한 순환형 품질 검증 프로세스 구축합니다.
+        </p>
+        <img src="/oag/assets/feedback_loop.png" alt="Feedback Loop" className="mx-auto mb-8 w-96 h-auto rounded-xl shadow-lg glass-effect hover:rotate-3 transition-transform duration-500" onError={(e) => {
+          const target = e.target as HTMLImageElement;
+          target.src = "/assets/feedback_loop.png";
+        }} />
+      </section>
+
+      <section className="py-20 px-4 bg-gradient-to-r from-accent to-primary-glow text-center">
+        <h2 className="text-4xl font-bold mb-8 gradient-text">하이브리드 호환성 증명</h2>
+        <p className="text-lg text-white mb-6 max-w-2xl mx-auto">
+          온프레미스 환경에서도 원활히 동작하는 레퍼런스 및 PoC 결과를 통해 보안 민감 고객을 확보합니다.
+        </p>
+        <div className="flex justify-center items-center space-x-4">
+          <div className="w-24 h-24 bg-white/10 rounded-full flex items-center justify-center ai-glow">
+            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4" /></svg>
+          </div>
+          <div className="text-white text-2xl font-semibold">온프레미스 호환</div>
+        </div>
+      </section>
 
       {/* Footer */}
       <footer className="py-12 px-4 bg-muted/50">
         <div className="container mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between">
             <div className="flex items-center space-x-3 mb-4 md:mb-0">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center">
-                <Brain className="w-5 h-5 text-white" />
+              <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shadow-sm border border-primary/10">
+                <img
+                  src="/assets/gng-logo.png"
+                  alt="Grok Ontology"
+                  className="w-5 h-5 object-contain"
+                />
               </div>
-              <span className="text-lg font-semibold gradient-text">Grok RAG System</span>
+              <span className="text-lg font-semibold gradient-text">Grok Ontology System</span>
             </div>
             <div className="flex items-center space-x-6 text-sm text-muted-foreground">
-              <span>© 2025 Grok RAG System</span>
+              <span>© 2025 Grok Ontology System</span>
               <Badge variant="secondary">v1.0</Badge>
             </div>
           </div>

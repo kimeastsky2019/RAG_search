@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { 
   Settings as SettingsIcon, 
-  Brain, 
   ArrowLeft, 
   Key,
   Database,
@@ -50,8 +49,12 @@ const Settings = () => {
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 홈으로
               </Button>
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center ai-glow">
-                <Brain className="w-6 h-6 text-white" />
+              <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm border border-primary/10">
+                <img
+                  src="/assets/gng-logo.png"
+                  alt="Grok Ontology"
+                  className="w-8 h-8 object-contain"
+                />
               </div>
               <div>
                 <h1 className="text-2xl font-bold gradient-text">설정</h1>

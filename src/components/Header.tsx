@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Brain, Search, Upload, BarChart3, Settings, LogIn, LogOut } from "lucide-react";
+import { Search, Upload, BarChart3, Settings, LogIn, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -36,11 +36,15 @@ const Header = () => {
             <div className="container mx-auto px-4 py-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3 cursor-pointer" onClick={() => navigate("/")}>
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center ai-glow">
-                            <Brain className="w-6 h-6 text-white" />
+                        <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm border border-primary/10">
+                            <img
+                                src="/assets/gng-logo.png"
+                                alt="Grok Ontology"
+                                className="w-8 h-8 object-contain"
+                            />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-bold gradient-text">Grok RAG</h1>
+                            <h1 className="text-2xl font-bold gradient-text">Grok Ontology</h1>
                             <p className="text-sm text-muted-foreground">지능형 문서 검색 시스템</p>
                         </div>
                     </div>

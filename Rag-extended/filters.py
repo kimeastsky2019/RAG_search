@@ -18,6 +18,9 @@ def build_metadata(
     tags: list[str] | None = None,
     version: str | None = None,
     date: str | None = None,
+    related_docs: str | None = None,
+    relationship_note: str | None = None,
+    policy_note: str | None = None,
 ) -> dict | None:
     metadata: dict[str, Any] = {}
     if category:
@@ -29,6 +32,13 @@ def build_metadata(
         metadata["version"] = version
     if date:
         metadata["date"] = date
+    if related_docs:
+        # Normalize related_docs similarly to tags (list of strings)
+        metadata["related_docs"] = _normalize_tags(related_docs)
+    if relationship_note:
+        metadata["relationship_note"] = relationship_note
+    if policy_note:
+        metadata["policy_note"] = policy_note
     return metadata or None
 
 

@@ -1,0 +1,4 @@
+curl -fsSL https://ollama.com/install.sh | sh
+
+
+올라마 다운로드
