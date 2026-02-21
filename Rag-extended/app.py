@@ -4,7 +4,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
 from sqlmodel import select
-from sqlalchemy import func
 from sqlalchemy import delete, func
 from sqlmodel.ext.asyncio.session import AsyncSession
 from datetime import timedelta
@@ -12,6 +11,8 @@ from typing import Optional
 import uuid
 import time
 import os
+import json
+import httpx
 from xai_sdk import AsyncClient
 
 from config import XAI_API_KEY, XAI_MANAGEMENT_API_KEY, XAI_MODEL, COST_PER_1M_INPUT, COST_PER_1M_OUTPUT
@@ -66,17 +67,20 @@ if not XAI_API_KEY:
 # Chat Client
 try:
     chat_client = AsyncClient(api_key=XAI_API_KEY or "dummy_key")
-except:
+except Exception:
     chat_client = None
 
-# Management Client
+# Management Client (needs both api_key for file uploads + management_api_key for collection ops)
 try:
     if XAI_MANAGEMENT_API_KEY:
-        mgmt_client = AsyncClient(management_api_key=XAI_MANAGEMENT_API_KEY)
+        mgmt_client = AsyncClient(
+            api_key=XAI_API_KEY,
+            management_api_key=XAI_MANAGEMENT_API_KEY,
+        )
     else:
         print("Warning: XAI_MANAGEMENT_API_KEY missing. Collections ops will fail.")
         mgmt_client = None
-except:
+except Exception:
     mgmt_client = None
     
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -104,8 +108,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSe
         email: str = payload.get("sub")
         if email is None:
             raise credentials_exception
-    except JWTError as e:
-        print(f"DEBUG: JWT Validation Error: {str(e)}")
+    except JWTError:
         raise credentials_exception
         
     statement = select(User).where(User.email == email)
@@ -126,7 +129,7 @@ class Filters(BaseModel):
 
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1)
-    collection_id: Optional[int] = None
+    collection_id: int = Field(..., description="검색할 컬렉션 ID (필수)")
     filters: Filters | None = None
 
 
@@ -139,11 +142,23 @@ class ChatResponse(BaseModel):
 
 class CollectionCreate(BaseModel):
     name: str
+    description: str | None = None
+    category: str | None = None
+    tags: str | None = None  # comma-separated
+
+class CollectionUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    category: str | None = None
+    tags: str | None = None
 
 class CollectionRead(BaseModel):
     id: int
     name: str
     xai_id: str
+    description: str | None = None
+    category: str | None = None
+    tags: str | None = None
     created_at: str
     documents_count: int | None = None
     processing_count: int | None = None
@@ -208,6 +223,195 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
 @app.get("/health")
 async def health():
     return {"ok": True, "model": XAI_MODEL}
+
+
+def _extract_text(content: bytes, filename: str) -> str:
+    """Extract text from file content for AI analysis."""
+    ext = os.path.splitext(filename.lower())[1]
+    if ext in ('.txt', '.md'):
+        return content.decode('utf-8', errors='replace')
+    if ext in ('.docx', '.doc'):
+        try:
+            import docx, io
+            doc = docx.Document(io.BytesIO(content))
+            return "\n".join(para.text for para in doc.paragraphs if para.text.strip())
+        except Exception:
+            return content.decode('utf-8', errors='replace')
+    if ext == '.pdf':
+        try:
+            import PyPDF2, io
+            reader = PyPDF2.PdfReader(io.BytesIO(content))
+            return "\n".join(page.extract_text() or "" for page in reader.pages)
+        except Exception:
+            return f"[PDF 파일: {filename}]"
+    if ext in ('.doc', '.docx'):
+        return f"[문서 파일: {filename}]"
+    if ext in ('.jpg', '.jpeg', '.png', '.gif'):
+        return f"[이미지 파일: {filename}]"
+    return f"[파일: {filename}]"
+
+
+ANALYZE_SYSTEM_PROMPT = """당신은 문서 온톨로지 구축을 돕는 전문 AI 어시스턴트입니다.
+사용자가 업로드한 문서의 내용을 분석하여 온톨로지 메타데이터를 추천합니다.
+
+반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요:
+{
+  "category": "문서 카테고리 (예: 정책, 재무, 기술, 법률, 인사 등)",
+  "tags": ["태그1", "태그2", "태그3"],
+  "summary": "문서 내용 2-3줄 요약",
+  "consulting": "이 문서를 온톨로지에 통합할 때 고려할 점과 추천사항 (관련 카테고리, 연결 가능한 문서 유형, 활용 방안 등)"
+}"""
+
+
+@app.post("/analyze")
+async def analyze_document(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """AI를 사용해 문서를 분석하고 온톨로지 메타데이터를 추천합니다."""
+    if not XAI_API_KEY:
+        raise HTTPException(status_code=500, detail="API Key가 설정되지 않았습니다.")
+
+    content = await file.read()
+    filename = file.filename or "unknown"
+
+    text = _extract_text(content, filename)
+    # Truncate to avoid token limits
+    if len(text) > 8000:
+        text = text[:8000] + "\n...(이하 생략)"
+
+    user_msg = f"파일명: {filename}\n\n내용:\n{text}"
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                "https://api.x.ai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {XAI_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": XAI_MODEL,
+                    "messages": [
+                        {"role": "system", "content": ANALYZE_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "temperature": 0.3,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            answer = data["choices"][0]["message"]["content"]
+
+            # Parse JSON from response (handle markdown code blocks)
+            cleaned = answer.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+                cleaned = cleaned.rsplit("```", 1)[0]
+            result = json.loads(cleaned)
+
+            return {
+                "category": result.get("category", ""),
+                "tags": result.get("tags", []),
+                "summary": result.get("summary", ""),
+                "consulting": result.get("consulting", ""),
+            }
+    except json.JSONDecodeError:
+        # If JSON parsing fails, return the raw answer as consulting
+        return {
+            "category": "",
+            "tags": [],
+            "summary": "",
+            "consulting": answer if 'answer' in dir() else "분석 결과를 파싱하지 못했습니다.",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 분석 실패: {str(e)}")
+
+COLLECTION_ANALYZE_PROMPT = """당신은 문서 컬렉션 온톨로지 구축을 돕는 전문 AI 어시스턴트입니다.
+컬렉션에 속한 문서 목록과 컬렉션 정보를 분석하여 적합한 온톨로지 메타데이터를 추천합니다.
+
+반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요:
+{
+  "description": "컬렉션 설명 (2-3줄로 컬렉션의 목적과 내용 요약)",
+  "category": "컬렉션 카테고리 (예: 정책, 재무, 기술, 법률, 인사, 연구 등)",
+  "tags": "태그1, 태그2, 태그3 (쉼표로 구분)",
+  "consulting": "이 컬렉션을 온톨로지에 통합할 때 고려할 점과 추천사항"
+}"""
+
+
+@app.post("/collections/{collection_id}/analyze")
+async def analyze_collection(
+    collection_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """컬렉션의 문서 목록을 AI로 분석하여 온톨로지 메타데이터를 추천합니다."""
+    if not XAI_API_KEY:
+        raise HTTPException(status_code=500, detail="API Key가 설정되지 않았습니다.")
+
+    collection = await session.get(Collection, collection_id)
+    if not collection:
+        raise HTTPException(status_code=404, detail="Collection not found")
+
+    # Gather document names
+    statement = select(Document).where(Document.collection_id == collection_id)
+    results = await session.exec(statement)
+    documents = results.all()
+
+    doc_list = "\n".join(f"- {d.name} (상태: {d.status})" for d in documents) if documents else "(문서 없음)"
+
+    user_msg = (
+        f"컬렉션 이름: {collection.name}\n"
+        f"현재 설명: {collection.description or '(없음)'}\n"
+        f"현재 카테고리: {collection.category or '(없음)'}\n"
+        f"현재 태그: {collection.tags or '(없음)'}\n"
+        f"문서 수: {len(documents)}\n\n"
+        f"포함된 문서 목록:\n{doc_list}"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                "https://api.x.ai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {XAI_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": XAI_MODEL,
+                    "messages": [
+                        {"role": "system", "content": COLLECTION_ANALYZE_PROMPT},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "temperature": 0.3,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            answer = data["choices"][0]["message"]["content"]
+
+            cleaned = answer.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+                cleaned = cleaned.rsplit("```", 1)[0]
+            result = json.loads(cleaned)
+
+            return {
+                "description": result.get("description", ""),
+                "category": result.get("category", ""),
+                "tags": result.get("tags", ""),
+                "consulting": result.get("consulting", ""),
+            }
+    except json.JSONDecodeError:
+        return {
+            "description": "",
+            "category": "",
+            "tags": "",
+            "consulting": answer if 'answer' in dir() else "분석 결과를 파싱하지 못했습니다.",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 분석 실패: {str(e)}")
+
 
 @app.get("/stats")
 async def get_stats(
@@ -275,6 +479,9 @@ async def list_collections(
                 id=c.id,
                 name=c.name,
                 xai_id=c.xai_id,
+                description=c.description,
+                category=c.category,
+                tags=c.tags,
                 created_at=c.created_at.isoformat(),
                 documents_count=total_docs,
                 processing_count=processing_docs,
@@ -301,16 +508,64 @@ async def create_collection(
         raise HTTPException(status_code=500, detail=f"xAI Error: {str(e)}")
 
     # Create in DB
-    db_collection = Collection(name=collection.name, xai_id=xai_id)
+    db_collection = Collection(
+        name=collection.name,
+        xai_id=xai_id,
+        description=collection.description,
+        category=collection.category,
+        tags=collection.tags,
+    )
     session.add(db_collection)
     await session.commit()
     await session.refresh(db_collection)
-    
+
     return CollectionRead(
-        id=db_collection.id, 
-        name=db_collection.name, 
-        xai_id=db_collection.xai_id, 
+        id=db_collection.id,
+        name=db_collection.name,
+        xai_id=db_collection.xai_id,
+        description=db_collection.description,
+        category=db_collection.category,
+        tags=db_collection.tags,
         created_at=db_collection.created_at.isoformat()
+    )
+
+@app.put("/collections/{collection_id}", response_model=CollectionRead)
+async def update_collection(
+    collection_id: int,
+    body: CollectionUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    collection = await session.get(Collection, collection_id)
+    if not collection:
+        raise HTTPException(status_code=404, detail="Collection not found")
+
+    if body.name is not None:
+        collection.name = body.name.strip()
+    if body.description is not None:
+        collection.description = body.description.strip() or None
+    if body.category is not None:
+        collection.category = body.category.strip() or None
+    if body.tags is not None:
+        collection.tags = body.tags.strip() or None
+
+    session.add(collection)
+    await session.commit()
+    await session.refresh(collection)
+
+    total_docs = (await session.exec(
+        select(func.count(Document.id)).where(Document.collection_id == collection.id)
+    )).one()
+
+    return CollectionRead(
+        id=collection.id,
+        name=collection.name,
+        xai_id=collection.xai_id,
+        description=collection.description,
+        category=collection.category,
+        tags=collection.tags,
+        created_at=collection.created_at.isoformat(),
+        documents_count=total_docs,
     )
 
 @app.delete("/collections/{collection_id}")
@@ -493,17 +748,23 @@ async def upload_document(
         policy_note=policy_note,
     )
 
+    # Convert non-text formats to plain text for xAI indexing
+    upload_name = file.filename
+    upload_data = content
+    file_ext = os.path.splitext(file.filename.lower())[1]
+    if file_ext in ('.docx', '.doc', '.pdf'):
+        extracted = _extract_text(content, file.filename)
+        if extracted.strip():
+            upload_data = extracted.encode('utf-8')
+            upload_name = os.path.splitext(file.filename)[0] + '.txt'
+
     # Upload to xAI
     try:
-        # NOTE: content_type is deprecated/unsupported in latest SDK
-        upload_kwargs = {
-            "collection_id": collection.xai_id,
-            "name": file.filename,
-            "data": content,
-        }
-        if metadata:
-            upload_kwargs["metadata_dict"] = metadata
-        upload_resp = await mgmt_client.collections.upload_document(**upload_kwargs)
+        upload_resp = await mgmt_client.collections.upload_document(
+            collection_id=collection.xai_id,
+            name=upload_name,
+            data=upload_data,
+        )
         xai_doc_id = extract_document_id(upload_resp)
         if not xai_doc_id:
             raise Exception("Could not find document_id in upload response")
@@ -529,39 +790,11 @@ async def chat(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
-    # Determine Collection ID
-    target_xai_id = None
-    db_collection: Collection | None = None
-    if req.collection_id:
-        coll = await session.get(Collection, req.collection_id)
-        if coll:
-            target_xai_id = coll.xai_id
-            db_collection = coll
-    
-    # Fallback to default if not provided, or error
-    if not target_xai_id:
-        # Priority 1: Check for "Core Reports" (Phase 1 Strategy)
-        statement = select(Collection).where(Collection.name == "Core Reports")
-        result = await session.exec(statement)
-        core_coll = result.first()
-        
-        if core_coll:
-            target_xai_id = core_coll.xai_id
-            db_collection = core_coll
-        else:
-            # Priority 2: Use most recent collection
-            result = await session.exec(select(Collection).order_by(Collection.created_at.desc()).limit(1))
-            first_coll = result.first()
-            if first_coll:
-                target_xai_id = first_coll.xai_id
-                db_collection = first_coll
-            else:
-                # Fallback to config if available
-                from config import COLLECTION_ID
-                if COLLECTION_ID:
-                    target_xai_id = COLLECTION_ID
-                else:
-                    raise HTTPException(status_code=400, detail="No collection specified and none found in DB")
+    # Determine Collection ID (required)
+    db_collection = await session.get(Collection, req.collection_id)
+    if not db_collection:
+        raise HTTPException(status_code=404, detail="지정한 컬렉션을 찾을 수 없습니다.")
+    target_xai_id = db_collection.xai_id
 
     request_id = str(uuid.uuid4())
     t0 = time.time()

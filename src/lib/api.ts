@@ -4,6 +4,9 @@ export interface Collection {
     id: number;
     name: string;
     xai_id: string;
+    description?: string;
+    category?: string;
+    tags?: string;
     created_at: string;
     documents_count?: number;
     processing_count?: number;
@@ -276,6 +279,63 @@ export const api = {
         }
     },
 
+    async updateCollection(collectionId: number, data: {
+        name?: string;
+        description?: string;
+        category?: string;
+        tags?: string;
+    }): Promise<Collection> {
+        const token = localStorage.getItem("token");
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) {
+            headers["Authorization"] = `Bearer ${token}`;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/collections/${collectionId}`, {
+                method: "PUT",
+                headers,
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: "Failed to update collection" }));
+                throw new Error(err.detail || `HTTP ${res.status}: Failed to update collection`);
+            }
+            return res.json();
+        } catch (error) {
+            if (error instanceof Error) throw error;
+            throw new Error("Network error: Failed to update collection");
+        }
+    },
+
+    async analyzeCollection(collectionId: number): Promise<{
+        description: string;
+        category: string;
+        tags: string;
+        consulting: string;
+    }> {
+        const token = localStorage.getItem("token");
+        const headers: Record<string, string> = {};
+        if (token) {
+            headers["Authorization"] = `Bearer ${token}`;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/collections/${collectionId}/analyze`, {
+                method: "POST",
+                headers,
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: "Analysis failed" }));
+                throw new Error(err.detail || `HTTP ${res.status}: Analysis failed`);
+            }
+            return res.json();
+        } catch (error) {
+            if (error instanceof Error) throw error;
+            throw new Error("Network error: Collection analysis failed");
+        }
+    },
+
     async getStats(): Promise<any> {
         const token = localStorage.getItem("token");
         const headers: Record<string, string> = {};
@@ -333,6 +393,38 @@ export const api = {
                 throw error;
             }
             throw new Error("Network error: Registration failed");
+        }
+    },
+
+    async analyzeDocument(file: File): Promise<{
+        category: string;
+        tags: string[];
+        summary: string;
+        consulting: string;
+    }> {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const token = localStorage.getItem("token");
+        const headers: Record<string, string> = {};
+        if (token) {
+            headers["Authorization"] = `Bearer ${token}`;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/analyze`, {
+                method: "POST",
+                headers,
+                body: formData,
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: "Analysis failed" }));
+                throw new Error(err.detail || `HTTP ${res.status}: Analysis failed`);
+            }
+            return res.json();
+        } catch (error) {
+            if (error instanceof Error) throw error;
+            throw new Error("Network error: Analysis failed");
         }
     },
 

@@ -1,0 +1,13 @@
+{
+  "status": "FAIL",
+  "verification_timestamp": "2025-12-21T11:01:58.400859",
+  "error_codes": [
+    "CREDIT_LIMIT_EXCEEDED"
+  ],
+  "evidence": {
+    "currentLimit": 5000,
+    "requested": 15000
+  },
+  "raw_bc_message": "Customer credit limit exceeded in BC Master Data.",
+  "recommended_fix": "LLM Suggestion: Review customer credit limit or request override for reason CREDIT_LIMIT_EXCEEDED."
+}

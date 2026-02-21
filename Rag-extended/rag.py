@@ -55,6 +55,9 @@ async def run_rag(
     filter_inst = build_filter_instructions(filters)
     if filter_inst:
         sys_content = sys_content + "\n" + filter_inst
+    
+    # Add instruction to utilize metadata specifically
+    sys_content += "\n문서에 'relationship_note'(문서 간 관계)나 'policy_note'(정책 메모) 메타데이터가 있다면 답변 작성 시 해당 내용을 중요하게 고려하고 반영하시오."
         
     messages = [
         system(sys_content),

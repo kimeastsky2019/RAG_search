@@ -7,12 +7,8 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Settings as SettingsIcon, 
-  Brain, 
-  ArrowLeft, 
+import {
   Key,
-  Database,
   Zap,
   Shield,
   Bell,
@@ -20,6 +16,8 @@ import {
   Save
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import Header from "@/components/Header";
+import { toast } from "sonner";
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -30,44 +28,25 @@ const Settings = () => {
   const [language, setLanguage] = useState("ko");
 
   const handleSave = () => {
-    // 설정 저장 로직 (백엔드 연동 시 구현)
-    console.log("Settings saved");
+    toast.success("설정이 저장되었습니다.");
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
-      {/* Header */}
-      <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => navigate("/")}
-                className="mr-2"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                홈으로
-              </Button>
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center ai-glow">
-                <Brain className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold gradient-text">설정</h1>
-                <p className="text-sm text-muted-foreground">시스템 환경 설정</p>
-              </div>
+      <Header />
+
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-3xl font-bold gradient-text">설정</h2>
+              <p className="text-sm text-muted-foreground mt-1">시스템 환경 설정</p>
             </div>
             <Button onClick={handleSave} className="bg-gradient-to-r from-primary to-primary-glow ai-glow">
               <Save className="w-4 h-4 mr-2" />
               설정 저장
             </Button>
           </div>
-        </div>
-      </header>
-
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
           <Tabs defaultValue="api" className="w-full">
             <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="api">API 설정</TabsTrigger>

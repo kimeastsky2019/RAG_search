@@ -1,45 +1,80 @@
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { UploadForm, UploadFormData } from "@/components/UploadForm";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Brain, ArrowLeft } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { api, Collection } from "@/lib/api";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FileText, Brain, Plus, Database, Save, Sparkles, Loader2, Tag, FolderOpen, MessageSquare, Pencil } from "lucide-react";
+import { api, Collection, API_BASE_URL } from "@/lib/api";
 import { toast } from "sonner";
-import Header from "@/components/Header"; // Import Header
+import Header from "@/components/Header";
 
 const Upload = () => {
-  const navigate = useNavigate();
-  const [files, setFiles] = useState<File[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [collectionName, setCollectionName] = useState("");
-  const [hasImageFiles, setHasImageFiles] = useState(false);
-  const [uploadCollectionId, setUploadCollectionId] = useState<number | null>(null);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string>("");
   const [documentStatuses, setDocumentStatuses] = useState<any[]>([]);
   const [polling, setPolling] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
+  const [uploadResults, setUploadResults] = useState<{ name: string; status: "success" | "failed"; message?: string }[]>([]);
 
-  // Existing collections state (optional enhancement)
-  const [existingCollections, setExistingCollections] = useState<Collection[]>([]);
+  // New collection creator
+  const [newCollectionName, setNewCollectionName] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  // Collection ontology edit fields
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [consulting, setConsulting] = useState("");
 
   useEffect(() => {
-    // Load existing collections on mount
-    api.getCollections().then(setExistingCollections).catch(console.error);
+    api.getCollections()
+      .then(setCollections)
+      .catch((e) => {
+        console.error(e);
+        toast.error("컬렉션 목록을 불러오지 못했습니다.");
+      });
   }, []);
 
+  // When selected collection changes, populate edit fields
+  const selectedCollection = collections.find(c => String(c.id) === selectedCollectionId);
+
   useEffect(() => {
-    if (!uploadCollectionId) return;
+    if (selectedCollection) {
+      setEditName(selectedCollection.name || "");
+      setEditDescription(selectedCollection.description || "");
+      setEditCategory(selectedCollection.category || "");
+      setEditTags(selectedCollection.tags || "");
+      setConsulting("");
+    } else {
+      setEditName("");
+      setEditDescription("");
+      setEditCategory("");
+      setEditTags("");
+      setConsulting("");
+    }
+  }, [selectedCollectionId]);
+
+  // Poll document statuses
+  useEffect(() => {
+    const collId = Number(selectedCollectionId);
+    if (!collId) {
+      setDocumentStatuses([]);
+      setPolling(false);
+      return;
+    }
 
     let intervalId: number | null = null;
     const poll = async () => {
       try {
-        const docs = await api.getDocuments(uploadCollectionId, true);
+        const docs = await api.getDocuments(collId, true);
         setDocumentStatuses(docs);
-        const hasProcessing = docs.some((doc) => doc.status === "processing");
+        const hasProcessing = docs.some((doc: any) => doc.status === "processing");
         setPolling(hasProcessing);
         if (!hasProcessing && intervalId) {
           window.clearInterval(intervalId);
@@ -55,362 +90,385 @@ const Upload = () => {
     return () => {
       if (intervalId) window.clearInterval(intervalId);
     };
-  }, [uploadCollectionId]);
+  }, [selectedCollectionId]);
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(event.target.files || []);
-    setFiles(prev => [...prev, ...selectedFiles]);
-    const hasImages = selectedFiles.some((file) =>
-      file.type.startsWith("image/") || /\.(png|jpe?g)$/i.test(file.name)
-    );
-    if (hasImages) {
-      setHasImageFiles(true);
-      toast.info("이미지 파일은 OCR 텍스트만 검색됩니다.");
+  const handleCreateCollection = async () => {
+    const trimmed = newCollectionName.trim();
+    if (!trimmed) return;
+    if (collections.find(c => c.name === trimmed)) {
+      toast.error("동일한 이름의 컬렉션이 이미 존재합니다.");
+      return;
+    }
+    try {
+      setCreating(true);
+      const col = await api.createCollection(trimmed);
+      toast.success(`컬렉션 생성: ${col.name}`);
+      setCollections(prev => [...prev, col]);
+      setSelectedCollectionId(String(col.id));
+      setNewCollectionName("");
+    } catch (e: any) {
+      toast.error(`생성 실패: ${e.message || e}`);
+    } finally {
+      setCreating(false);
     }
   };
 
-  const handleUpload = async () => {
-    if (files.length === 0 || !collectionName.trim()) return;
-
-    setUploading(true);
-    setUploadProgress(0);
+  const handleSaveCollection = async () => {
+    const collId = Number(selectedCollectionId);
+    if (!collId) return;
 
     try {
-      // 1. Create or Find Collection (simple implementation: create, backend should handle dupes if configured, 
-      // but here we might fail if duplicate unique constraint. 
-      // Let's try to match existing name first.)
-
-      let targetCollection = existingCollections.find(c => c.name === collectionName);
-
-      if (!targetCollection) {
-        try {
-          targetCollection = await api.createCollection(collectionName);
-        } catch (e: any) {
-          // If it failed because of uniqueness, try to refetch
-          if (e.message.includes("UNIQUE constraint")) {
-            const refreshed = await api.getCollections();
-            targetCollection = refreshed.find(c => c.name === collectionName);
-            if (!targetCollection) throw e;
-          } else {
-            throw e;
-          }
-        }
-      }
-
-      const totalFiles = files.length;
-      let completed = 0;
-
-      // 2. Upload Files
-      for (const file of files) {
-        await api.uploadDocument(targetCollection!.id, file);
-        completed++;
-        setUploadProgress(Math.round((completed / totalFiles) * 100));
-      }
-
-      toast.success("업로드가 완료되었습니다!");
-      setUploadCollectionId(targetCollection!.id);
-      setDocumentStatuses([]);
-      setFiles([]);
-      setCollectionName("");
-      setUploadProgress(100);
-      setHasImageFiles(false);
-
+      setSaving(true);
+      const updated = await api.updateCollection(collId, {
+        name: editName.trim() || undefined,
+        description: editDescription.trim() || undefined,
+        category: editCategory.trim() || undefined,
+        tags: editTags.trim() || undefined,
+      });
+      // Update in local state
+      setCollections(prev => prev.map(c => c.id === updated.id ? updated : c));
+      toast.success("컬렉션 정보가 저장되었습니다.");
     } catch (e: any) {
-      toast.error(`오류 발생: ${e.message}`);
-      console.error(e);
+      toast.error(`저장 실패: ${e.message || e}`);
     } finally {
-      setUploading(false);
+      setSaving(false);
     }
   };
 
-  const removeFile = (index: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== index));
+  const handleAIAnalyze = async () => {
+    const collId = Number(selectedCollectionId);
+    if (!collId) return;
+
+    try {
+      setAnalyzing(true);
+      const result = await api.analyzeCollection(collId);
+      if (result.description) setEditDescription(result.description);
+      if (result.category) setEditCategory(result.category);
+      if (result.tags) setEditTags(result.tags);
+      setConsulting(result.consulting || "");
+      toast.success("AI 분석 완료! 메타데이터가 자동 입력되었습니다.");
+    } catch (e: any) {
+      toast.error(`AI 분석 실패: ${e.message || e}`);
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setIsDragging(false);
-    const droppedFiles = Array.from(event.dataTransfer.files || []);
-    if (droppedFiles.length === 0) return;
-    setFiles(prev => [...prev, ...droppedFiles]);
-    const hasImages = droppedFiles.some((file) =>
-      file.type.startsWith("image/") || /\.(png|jpe?g)$/i.test(file.name)
+  const handleUpload = async ({ files, category, tags, summary }: UploadFormData) => {
+    const collId = Number(selectedCollectionId);
+    if (!collId) {
+      toast.error("컬렉션을 먼저 선택해 주세요.");
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const results = await Promise.allSettled(
+      files.map(async (file) => {
+        const formData = new FormData();
+        formData.append("file", file);
+        if (category) formData.append("category", category);
+        if (tags.length > 0) formData.append("tags", tags.join(","));
+
+        const res = await fetch(`${API_BASE_URL}/collections/${collId}/upload`, {
+          method: "POST",
+          headers,
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || res.statusText || "Upload failed");
+        }
+        return file.name;
+      })
     );
-    if (hasImages) {
-      setHasImageFiles(true);
-      toast.info("이미지 파일은 OCR 텍스트만 검색됩니다.");
-    }
-  };
 
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setIsDragging(true);
-  };
+    const normalized = results.map((result, index) => {
+      const name = files[index]?.name || `file-${index + 1}`;
+      if (result.status === "fulfilled") {
+        return { name, status: "success" as const };
+      }
+      return { name, status: "failed" as const, message: (result.reason as Error)?.message };
+    });
 
-  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setIsDragging(false);
-  };
+    setUploadResults(normalized);
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    const failed = normalized.filter(r => r.status === "failed");
+    const succeeded = normalized.length - failed.length;
+    if (succeeded > 0) toast.success(`${succeeded}개 파일 업로드 성공`);
+    if (failed.length > 0) toast.error(`${failed.length}개 파일 업로드 실패`);
   };
 
   const renderStatusBadge = (status: string) => {
     if (status === "processed") {
-      return <Badge variant="secondary" className="text-green-700">처리완료</Badge>;
+      return <Badge variant="secondary" className="text-green-700 bg-green-100 hover:bg-green-200">처리완료</Badge>;
     }
     if (status === "failed") {
       return <Badge variant="destructive">실패</Badge>;
     }
-    return <Badge variant="outline" className="text-yellow-700">인덱싱 중</Badge>;
+    return <Badge variant="outline" className="text-yellow-700 bg-yellow-50 border-yellow-200">인덱싱 중</Badge>;
   };
+
+  const hasOntologyChanges = selectedCollection && (
+    editName !== (selectedCollection.name || "") ||
+    editDescription !== (selectedCollection.description || "") ||
+    editCategory !== (selectedCollection.category || "") ||
+    editTags !== (selectedCollection.tags || "")
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
-      {/* Header */}
       <Header />
 
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold gradient-text mb-2">문서 업로드</h1>
-            <p className="text-muted-foreground">새로운 컬렉션 생성 및 문서 추가</p>
+      <div className="container mx-auto px-4 py-12">
+        <div className="max-w-2xl mx-auto space-y-8">
+
+          <div className="text-center space-y-2">
+            <h1 className="text-3xl font-bold gradient-text">문서 업로드</h1>
+            <p className="text-muted-foreground">
+              컬렉션을 선택하고 파일을 업로드하세요.
+            </p>
           </div>
 
-          {/* Collection Setup */}
-          <Card className="mb-8 ai-glow border-primary/20">
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Brain className="w-5 h-5 mr-2 text-primary" />
-                컬렉션 설정
+          {/* Collection Selector */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Database className="w-5 h-5 text-primary" />
+                컬렉션 선택 <span className="text-destructive">*</span>
               </CardTitle>
-              <CardDescription>
-                문서들을 그룹화할 컬렉션 이름을 설정하세요. 기존 이름을 입력하면 해당 컬렉션에 추가됩니다.
-              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="collection-name">컬렉션 이름</Label>
-                  <Input
-                    id="collection-name"
-                    placeholder="예: 회사 정책 문서, 기술 매뉴얼 등"
-                    value={collectionName}
-                    onChange={(e) => setCollectionName(e.target.value)}
-                    className="mt-1"
-                    list="existing-collections"
-                  />
-                  <datalist id="existing-collections">
-                    {existingCollections.map(c => (
-                      <option key={c.id} value={c.name} />
-                    ))}
-                  </datalist>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            <CardContent className="space-y-3">
+              <Select
+                value={selectedCollectionId}
+                onValueChange={setSelectedCollectionId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="업로드할 컬렉션을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  {collections.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name}
+                      {typeof c.documents_count === "number" && ` (${c.documents_count}개)`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-          {/* File Upload */}
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <UploadIcon className="w-5 h-5 mr-2 text-primary" />
-                파일 업로드
-              </CardTitle>
-              <CardDescription>
-                PDF, TXT, MD, 이미지(JPG/PNG) 파일을 업로드하세요. 여러 파일을 동시에 선택할 수 있습니다.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <div className="text-sm text-muted-foreground">
-                  이미지 데이터도 업로드 가능합니다. (현재는 OCR 텍스트만 검색)
-                </div>
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  ⚠️ 이미지 파일(jpg, png 등)은 텍스트 추출(OCR)만 지원합니다.
-                  <br />
-                  사진, 차트, 다이어그램 등의 시각적 내용은 현재 검색되지 않을 수 있습니다.
-                  <br />
-                  (향후 vision 분석 기능으로 업그레이드 예정)
-                </div>
-                {/* Upload Area */}
-                <div
-                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                    isDragging ? "border-primary bg-primary/5" : "border-primary/30 hover:border-primary/50"
-                  }`}
-                  onDrop={handleDrop}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                >
-                  <UploadIcon className="w-12 h-12 mx-auto mb-4 text-primary/60" />
-                  <div className="space-y-2">
-                    <p className="text-lg font-medium">파일을 드래그하거나 클릭하여 선택</p>
-                    <p className="text-sm text-muted-foreground">
-                      지원 형식: PDF, TXT, MD, JPG, PNG (최대 10MB)
-                    </p>
-                  </div>
-                  <Input
-                    type="file"
-                    multiple
-                    accept=".pdf,.txt,.md,.jpg,.jpeg,.png"
-                    onChange={handleFileSelect}
-                    className="mt-4 cursor-pointer"
-                  />
-                </div>
-
-                {/* File List */}
-                {files.length > 0 && (
-                  <div className="space-y-3">
-                    <h4 className="font-medium">선택된 파일 ({files.length}개)</h4>
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {files.map((file, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                          <div className="flex items-center space-x-3">
-                            <FileText className="w-5 h-5 text-primary" />
-                            <div>
-                              <p className="font-medium text-sm">{file.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {formatFileSize(file.size)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Badge variant="secondary" className="text-xs">
-                              {file.type.includes('pdf') ? 'PDF' :
-                                file.type.includes('text') ? 'TXT' :
-                                file.type.includes('image') ? 'IMG' : 'MD'}
-                            </Badge>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeFile(index)}
-                              className="text-destructive hover:text-destructive"
-                            >
-                              ×
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Upload Progress */}
-                {uploading && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">업로드 진행률</span>
-                      <span className="text-sm text-muted-foreground">{uploadProgress}%</span>
-                    </div>
-                    <Progress value={uploadProgress} className="w-full" />
-                  </div>
-                )}
-                {hasImageFiles && !uploading && (
-                  <div className="text-xs text-amber-700">
-                    이미지 파일은 OCR 텍스트만 검색됩니다. 시각적 내용은 검색되지 않을 수 있습니다.
-                  </div>
-                )}
-
-                {/* Upload Button */}
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="새 컬렉션 이름"
+                  value={newCollectionName}
+                  onChange={(e) => setNewCollectionName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCreateCollection()}
+                />
                 <Button
-                  onClick={handleUpload}
-                  disabled={files.length === 0 || !collectionName.trim() || uploading}
-                  className="w-full bg-gradient-to-r from-primary to-primary-glow hover:from-primary-glow hover:to-primary ai-glow"
-                  size="lg"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCreateCollection}
+                  disabled={creating || !newCollectionName.trim()}
+                  className="shrink-0"
                 >
-                  {uploading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-                      업로드 중...
-                    </>
-                  ) : (
-                    <>
-                      <UploadIcon className="w-5 h-5 mr-2" />
-                      컬렉션에 업로드
-                    </>
-                  )}
+                  <Plus className="w-4 h-4 mr-1" />
+                  {creating ? "생성 중..." : "새로 만들기"}
                 </Button>
               </div>
             </CardContent>
           </Card>
 
-          {/* Upload Tips */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <AlertCircle className="w-5 h-5 mr-2 text-accent" />
-                업로드 가이드
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <h4 className="font-medium mb-2">지원 파일 형식</h4>
-                  <ul className="text-sm text-muted-foreground space-y-1">
-                    <li>• PDF 문서 (텍스트 추출 가능)</li>
-                    <li>• 텍스트 파일 (.txt)</li>
-                    <li>• 마크다운 파일 (.md)</li>
-                    <li>• 이미지 파일 (.jpg, .png) - OCR 텍스트만 검색</li>
-                  </ul>
+          {/* Collection Ontology Editor */}
+          {selectedCollectionId && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Pencil className="w-5 h-5 text-primary" />
+                    컬렉션 온톨로지 설정
+                  </CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-primary/30 text-primary hover:bg-primary/5"
+                    onClick={handleAIAnalyze}
+                    disabled={analyzing}
+                  >
+                    {analyzing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                        분석 중...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 mr-1" />
+                        AI 자동입력
+                      </>
+                    )}
+                  </Button>
                 </div>
-                <div>
-                  <h4 className="font-medium mb-2">최적화 팁</h4>
-                  <ul className="text-sm text-muted-foreground space-y-1">
-                    <li>• 파일 크기는 10MB 이하 권장</li>
-                    <li>• 명확한 컬렉션 이름 사용</li>
-                    <li>• 관련 문서들을 함께 업로드</li>
-                  </ul>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {uploadCollectionId && (
-            <Card className="mt-8">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <CheckCircle className="w-5 h-5 mr-2 text-primary" />
-                  인덱싱 상태
-                </CardTitle>
-                <CardDescription>
-                  업로드된 문서의 처리 상태를 실시간으로 확인합니다. 인덱싱 중이면 잠시 후 자동 업데이트됩니다.
-                </CardDescription>
               </CardHeader>
-              <CardContent>
-                {documentStatuses.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">문서 상태를 가져오는 중입니다...</p>
-                ) : (
-                  <div className="space-y-2">
-                    {documentStatuses.map((doc) => (
-                      <div key={doc.id} className="flex items-center justify-between p-3 bg-muted/40 rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <FileText className="w-4 h-4 text-primary" />
-                          <div>
-                            <p className="text-sm font-medium">{doc.name}</p>
-                            <p className="text-xs text-muted-foreground">상태: {doc.status}</p>
-                          </div>
-                        </div>
-                        {renderStatusBadge(doc.status)}
+              <CardContent className="space-y-4">
+                {/* Collection Name */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5 text-sm">
+                    <Database className="w-3.5 h-3.5" /> 컬렉션 이름
+                  </Label>
+                  <Input
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    placeholder="컬렉션 이름"
+                  />
+                </div>
+
+                {/* Description */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5 text-sm">
+                    <FileText className="w-3.5 h-3.5" /> 설명
+                  </Label>
+                  <Textarea
+                    value={editDescription}
+                    onChange={e => setEditDescription(e.target.value)}
+                    placeholder="컬렉션의 목적과 내용을 설명하세요 (AI 자동입력 가능)"
+                    className="min-h-[60px] resize-none"
+                  />
+                </div>
+
+                {/* Category */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5 text-sm">
+                    <FolderOpen className="w-3.5 h-3.5" /> 카테고리
+                  </Label>
+                  <Input
+                    value={editCategory}
+                    onChange={e => setEditCategory(e.target.value)}
+                    placeholder="예: 정책, 재무, 기술, 법률, 연구"
+                  />
+                </div>
+
+                {/* Tags */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5 text-sm">
+                    <Tag className="w-3.5 h-3.5" /> 태그
+                  </Label>
+                  <Input
+                    value={editTags}
+                    onChange={e => setEditTags(e.target.value)}
+                    placeholder="쉼표로 구분 (예: 광주, 특구, 2026)"
+                  />
+                  {editTags && (
+                    <div className="flex flex-wrap gap-1">
+                      {editTags.split(",").map(t => t.trim()).filter(Boolean).map((t, i) => (
+                        <Badge key={i} variant="secondary" className="text-xs">{t}</Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* AI Consulting Result */}
+                {consulting && (
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="flex items-start gap-2">
+                      <MessageSquare className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold text-primary mb-1">AI 컨설팅</p>
+                        <p className="text-sm text-foreground whitespace-pre-wrap">{consulting}</p>
                       </div>
-                    ))}
+                    </div>
                   </div>
                 )}
+
+                {/* Save Button */}
+                <Button
+                  onClick={handleSaveCollection}
+                  disabled={saving || !hasOntologyChanges}
+                  className="w-full"
+                  variant={hasOntologyChanges ? "default" : "outline"}
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      저장 중...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      {hasOntologyChanges ? "변경사항 저장" : "변경사항 없음"}
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Upload Form */}
+          <UploadForm
+            onUpload={handleUpload}
+            className="w-full"
+            disabled={!selectedCollectionId}
+          />
+
+          {/* Upload Results */}
+          {uploadResults.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">업로드 결과</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {uploadResults.map((result) => (
+                    <div key={result.name} className="flex items-center justify-between gap-4 rounded-lg border bg-background/50 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{result.name}</p>
+                        {result.status === "failed" && (
+                          <p className="text-xs text-destructive mt-0.5">{result.message}</p>
+                        )}
+                      </div>
+                      {result.status === "success" ? (
+                        <Badge variant="secondary" className="text-green-700 bg-green-100 shrink-0">성공</Badge>
+                      ) : (
+                        <Badge variant="destructive" className="shrink-0">실패</Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Indexing Status */}
+          {selectedCollectionId && documentStatuses.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Brain className="w-5 h-5 text-primary" />
+                  {selectedCollection?.name} 문서 상태
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {documentStatuses.map((doc) => (
+                    <div key={doc.id} className="flex items-center justify-between px-4 py-3 bg-background/50 border rounded-lg">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FileText className="w-4 h-4 text-primary shrink-0" />
+                        <span className="font-medium truncate">{doc.name}</span>
+                      </div>
+                      {renderStatusBadge(doc.status)}
+                    </div>
+                  ))}
+                </div>
                 {polling && (
-                  <div className="mt-4 text-xs text-muted-foreground">
-                    인덱싱 중인 문서가 있습니다. 완료될 때까지 자동으로 상태를 갱신합니다.
+                  <div className="mt-4 flex items-center justify-center gap-2 text-sm text-primary animate-pulse">
+                    <div className="w-2 h-2 rounded-full bg-primary" />
+                    인덱싱 진행 중...
                   </div>
                 )}
               </CardContent>
             </Card>
           )}
+
         </div>
       </div>
     </div>

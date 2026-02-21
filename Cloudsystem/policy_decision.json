@@ -1,0 +1,16 @@
+{
+    "policy_id": "POL-2024-001",
+    "decision": "APPROVE",
+    "context": {
+        "customer_id": "CUST-10023",
+        "order_amount": 5000,
+        "currency": "USD",
+        "items": [
+            {
+                "item_id": "ITEM-A001",
+                "quantity": 10
+            }
+        ]
+    },
+    "generated_at": "2024-12-21T10:00:00Z"
+}

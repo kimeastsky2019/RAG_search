@@ -207,10 +207,17 @@ function cdnPrefixImages(): Plugin {
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   return {
-    base: '/rag/',
+    base: '/oag/',
     server: {
       host: "::",
       port: 8080,
+      proxy: {
+        '/oag/api': {
+          target: 'http://127.0.0.1:8001',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/oag\/api/, ''),
+        },
+      },
     },
     plugins: [
       react(),

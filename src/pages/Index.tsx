@@ -6,9 +6,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Upload, Brain, Zap, FileText, MessageSquare, Settings, BarChart3, LogIn, LogOut } from "lucide-react";
+import { Search, Upload, Brain, Zap, FileText, MessageSquare, Settings, BarChart3, LogIn, LogOut, ChevronDown, ChevronUp, Database } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api, ChatResponse, Collection } from "@/lib/api";
+
+
+
 import { toast } from "sonner";
 import Header from "@/components/Header"; // Import Header
 
@@ -27,6 +30,7 @@ const Index = () => {
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [dashboardStats, setDashboardStats] = useState<{ documents: number; collections: number; queries: number } | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
   const [searchCount, setSearchCount] = useState(0);
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
   const [statsTick, setStatsTick] = useState(0);
@@ -235,8 +239,12 @@ const Index = () => {
               <Card className="ai-glow border-primary/20">
                 <CardContent className="p-6">
                   <div className="flex flex-col space-y-4">
+                    {/* Collection Selector - Primary */}
                     <div className="text-left space-y-2">
-                      <label className="text-sm font-medium text-muted-foreground">검색 컬렉션</label>
+                      <label className="text-sm font-semibold flex items-center gap-1.5">
+                        <Database className="w-4 h-4 text-primary" />
+                        검색 컬렉션 <span className="text-destructive">*</span>
+                      </label>
                       <Select
                         value={selectedCollectionId}
                         onValueChange={(value) => {
@@ -245,8 +253,8 @@ const Index = () => {
                         }}
                         disabled={!isLoggedIn || collections.length === 0}
                       >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder={collections.length === 0 ? "컬렉션이 없습니다" : "컬렉션 선택"} />
+                        <SelectTrigger className={`mt-1 ${!selectedCollectionId && isLoggedIn ? "border-destructive/50 ring-1 ring-destructive/20" : ""}`}>
+                          <SelectValue placeholder={collections.length === 0 ? "컬렉션이 없습니다" : "컬렉션을 선택하세요"} />
                         </SelectTrigger>
                         <SelectContent>
                           {collections.map((c) => (
@@ -259,6 +267,9 @@ const Index = () => {
                       </Select>
                       {!isLoggedIn && (
                         <p className="text-xs text-muted-foreground">로그인 후 컬렉션을 선택할 수 있습니다.</p>
+                      )}
+                      {isLoggedIn && !selectedCollectionId && collections.length > 0 && (
+                        <p className="text-xs text-destructive/70">검색하려면 컬렉션을 먼저 선택해 주세요.</p>
                       )}
                       {isLoggedIn && collections.length === 0 && (
                         <p className="text-xs text-muted-foreground">
@@ -281,40 +292,51 @@ const Index = () => {
                         )}
                       </div>
                     )}
-                    <div className="grid grid-cols-1 gap-3 text-left md:grid-cols-2">
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium text-muted-foreground">카테고리</label>
-                        <Input
-                          placeholder="예: 정책, 공고"
-                          value={filterCategory}
-                          onChange={(e) => setFilterCategory(e.target.value)}
-                        />
+                    {/* Collapsible Filters */}
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors text-left"
+                      onClick={() => setShowFilters(!showFilters)}
+                    >
+                      {showFilters ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      고급 필터 (선택사항)
+                    </button>
+                    {showFilters && (
+                      <div className="grid grid-cols-1 gap-3 text-left md:grid-cols-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium text-muted-foreground">카테고리</label>
+                          <Input
+                            placeholder="예: 정책, 공고"
+                            value={filterCategory}
+                            onChange={(e) => setFilterCategory(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium text-muted-foreground">태그</label>
+                          <Input
+                            placeholder="예: 광주, 특구 (쉼표로 구분)"
+                            value={filterTags}
+                            onChange={(e) => setFilterTags(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium text-muted-foreground">시작일</label>
+                          <Input
+                            type="date"
+                            value={filterDateFrom}
+                            onChange={(e) => setFilterDateFrom(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium text-muted-foreground">종료일</label>
+                          <Input
+                            type="date"
+                            value={filterDateTo}
+                            onChange={(e) => setFilterDateTo(e.target.value)}
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium text-muted-foreground">태그</label>
-                        <Input
-                          placeholder="예: 광주, 특구 (쉼표로 구분)"
-                          value={filterTags}
-                          onChange={(e) => setFilterTags(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium text-muted-foreground">시작일</label>
-                        <Input
-                          type="date"
-                          value={filterDateFrom}
-                          onChange={(e) => setFilterDateFrom(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium text-muted-foreground">종료일</label>
-                        <Input
-                          type="date"
-                          value={filterDateTo}
-                          onChange={(e) => setFilterDateTo(e.target.value)}
-                        />
-                      </div>
-                    </div>
+                    )}
                     <Textarea
                       placeholder={isLoggedIn ? "문서에 대해 궁금한 것을 질문해보세요... (예: '프로젝트 예산은 얼마인가요?')" : "검색하려면 로그인이 필요합니다."}
                       value={query}
@@ -324,7 +346,7 @@ const Index = () => {
                     />
                     <Button
                       onClick={handleSearch}
-                      disabled={!query.trim() || isSearching}
+                      disabled={!query.trim() || !selectedCollectionId || isSearching}
                       className="w-full bg-gradient-to-r from-primary to-primary-glow hover:from-primary-glow hover:to-primary ai-glow"
                       size="lg"
                     >
@@ -560,19 +582,58 @@ const Index = () => {
           </div>
         </div>
       </section>
+      {/* New Highlight Sections */}
+      <section className="py-20 px-4 bg-gradient-to-br from-primary/10 to-background text-center">
+        <h2 className="text-4xl font-bold mb-8 gradient-text">전문가 풀 (SME) 강조</h2>
+        <p className="text-lg text-muted-foreground mb-6 max-w-2xl mx-auto">
+          전문가 중심의 관계 의미성 구축합니다.
+        </p>
+        <img src="/oag/assets/sme_pool.png" alt="SME Pool" className="mx-auto mb-8 w-96 h-auto rounded-xl shadow-lg glass-effect hover:scale-105 transition-transform duration-500" onError={(e) => {
+          const target = e.target as HTMLImageElement;
+          target.src = "/assets/sme_pool.png";
+        }} />
+      </section>
+
+      <section className="py-20 px-4 bg-muted/30 text-center">
+        <h2 className="text-4xl font-bold mb-8 gradient-text">피드백 루프 시각화</h2>
+        <p className="text-lg text-muted-foreground mb-6 max-w-2xl mx-auto">
+          휴먼인 루프를 활용한 순환형 품질 검증 프로세스 구축합니다.
+        </p>
+        <img src="/oag/assets/feedback_loop.png" alt="Feedback Loop" className="mx-auto mb-8 w-96 h-auto rounded-xl shadow-lg glass-effect hover:rotate-3 transition-transform duration-500" onError={(e) => {
+          const target = e.target as HTMLImageElement;
+          target.src = "/assets/feedback_loop.png";
+        }} />
+      </section>
+
+      <section className="py-20 px-4 bg-gradient-to-r from-accent to-primary-glow text-center">
+        <h2 className="text-4xl font-bold mb-8 gradient-text">하이브리드 호환성 증명</h2>
+        <p className="text-lg text-white mb-6 max-w-2xl mx-auto">
+          온프레미스 환경에서도 원활히 동작하는 레퍼런스 및 PoC 결과를 통해 보안 민감 고객을 확보합니다.
+        </p>
+        <div className="flex justify-center items-center space-x-4">
+          <div className="w-24 h-24 bg-white/10 rounded-full flex items-center justify-center ai-glow">
+            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4" /></svg>
+          </div>
+          <div className="text-white text-2xl font-semibold">온프레미스 호환</div>
+        </div>
+      </section>
 
       {/* Footer */}
       <footer className="py-12 px-4 bg-muted/50">
         <div className="container mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between">
             <div className="flex items-center space-x-3 mb-4 md:mb-0">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center">
-                <Brain className="w-5 h-5 text-white" />
+              <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shadow-sm border border-primary/10">
+                <img
+                  src="/assets/gng-logo.png"
+                  alt="Grok Ontology"
+                  className="w-5 h-5 object-contain"
+                />
               </div>
-              <span className="text-lg font-semibold gradient-text">Grok RAG System</span>
+              <span className="text-lg font-semibold gradient-text">Grok Ontology System</span>
             </div>
             <div className="flex items-center space-x-6 text-sm text-muted-foreground">
-              <span>© 2025 Grok RAG System</span>
+              <span>© 2026 Grok Ontology System</span>
               <Badge variant="secondary">v1.0</Badge>
             </div>
           </div>

@@ -6,3 +6,21 @@ dist/
 __pycache__/
 Rag-extended/__pycache__/
 Rag-extended/rag.db
+backend.tar.gz
+dist.tar.gz
+uploaded_files/
+tmp-test.gngmeta.com
+
+# Environment files (API keys, secrets)
+.env
+.env.*
+!.env.example
+
+# Cloudsystem local artifacts
+Cloudsystem/node_modules/
+Cloudsystem/dist/
+Cloudsystem/ontology_db.sqlite
+Cloudsystem/apache-jena-fuseki-5.6.0/
+Cloudsystem/apache-jena-fuseki-5.6.0.tar
+Cloudsystem/amazon-corretto-17-x64-macos-jdk.tar.gz
+Cloudsystem/amazon-corretto-17.jdk/

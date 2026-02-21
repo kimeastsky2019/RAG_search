@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Brain, Lock, Mail, Loader2, User } from "lucide-react";
+import { Lock, Mail, Loader2, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -68,10 +68,14 @@ const Login = () => {
         <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex items-center justify-center p-4">
             <Card className="w-full max-w-md border-primary/20 ai-glow">
                 <CardHeader className="space-y-1 text-center">
-                    <div className="mx-auto w-12 h-12 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center mb-4 ai-glow">
-                        <Brain className="w-6 h-6 text-white" />
+                    <div className="mx-auto w-12 h-12 rounded-lg bg-white flex items-center justify-center mb-4 shadow-sm border border-primary/10">
+                        <img
+                            src="/assets/gng-logo.png"
+                            alt="Grok Ontology"
+                            className="w-8 h-8 object-contain"
+                        />
                     </div>
-                    <CardTitle className="text-2xl font-bold gradient-text">Grok RAG</CardTitle>
+                    <CardTitle className="text-2xl font-bold gradient-text">Grok Ontology</CardTitle>
                     <CardDescription>
                         AI 기반 문서 분석 플랫폼에 오신 것을 환영합니다
                     </CardDescription>
@@ -187,7 +191,7 @@ const Login = () => {
                     </Tabs>
                 </CardContent>
                 <CardFooter className="flex justify-center border-t p-4 text-sm text-muted-foreground">
-                    &copy; 2025 Grok RAG System
+                    &copy; 2026 Grok Ontology System
                 </CardFooter>
             </Card>
         </div>

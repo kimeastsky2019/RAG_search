@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ontology Pipeline Control</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Left Column: Input -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Policy Decision Input</h2>
+                <div class="actions">
+                    <button class="btn btn-secondary" onclick="resetPolicy()">Default</button>
+                    <button class="btn btn-primary" onclick="saveAndRun()">
+                        <span>Run Pipeline</span>
+                    </button>
+                </div>
+            </div>
+            <div class="editor-container">
+                <textarea id="jsonEditor" spellcheck="false"></textarea>
+            </div>
+            <div style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-secondary);">
+                <p>💡 Tip: Set <code>order_amount > 10000</code> to trigger a BC Validation Failure.</p>
+            </div>
+        </div>
+
+        <!-- Right Column: Pipeline Status -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Pipeline Execution Status</h2>
+                <span id="globalStatus" class="badge" style="display:none">READY</span>
+            </div>
+            
+            <div id="pipelineViz" class="pipeline-viz">
+                <div class="placeholder-text" style="text-align:center; padding: 2rem; color: var(--text-secondary);">
+                    Ready to start. Click "Run Pipeline" to begin.
+                </div>
+            </div>
+
+            <!-- Validation Report Area -->
+            <div id="validationResult" class="result-area">
+                <h3 style="margin-bottom:0.5rem; font-size:1rem;">Business Central Report</h3>
+                <div style="display:flex; gap:1rem; margin-bottom:0.5rem;">
+                    <span id="bcStatusBadge" class="badge"></span>
+                    <span id="gateStatusBadge" class="badge"></span>
+                </div>
+                <div id="bcEvidence" style="font-family: 'Fira Code', monospace; font-size: 0.85rem; color: #cbd5e1; white-space: pre-wrap;"></div>
+                <div id="fixRecommendation" style="margin-top:0.5rem; padding:0.5rem; background:rgba(59,130,246,0.1); border-radius:4px; font-size:0.9rem; display:none;">
+                    <strong>🤖 AI Recommendation:</strong> <span id="fixText"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initial Load
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchPolicy();
+        });
+
+        async function fetchPolicy() {
+            try {
+                const res = await fetch('/api/policy');
+                const data = await res.json();
+                document.getElementById('jsonEditor').value = JSON.stringify(data, null, 4);
+            } catch (err) {
+                console.error("Failed to load policy", err);
+            }
+        }
+
+        async function resetPolicy() {
+            const defaultPolicy = {
+                "policy_id": "POL-2024-001",
+                "decision": "APPROVE",
+                "context": {
+                    "customer_id": "CUST-10023",
+                    "order_amount": 5000,
+                    "currency": "USD",
+                    "items": [{"item_id": "ITEM-A001", "quantity": 10}]
+                },
+                "generated_at": new Date().toISOString()
+            };
+            document.getElementById('jsonEditor').value = JSON.stringify(defaultPolicy, null, 4);
+        }
+
+        async function saveAndRun() {
+            const editor = document.getElementById('jsonEditor');
+            let policyData;
+            try {
+                policyData = JSON.parse(editor.value);
+            } catch (e) {
+                alert("Invalid JSON!");
+                return;
+            }
+
+            // 1. Save Policy
+            await fetch('/api/policy', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(policyData)
+            });
+
+            // 2. Run Pipeline UI update
+            renderPipelineStart();
+
+            // 3. Call API
+            try {
+                const res = await fetch('/api/run', { method: 'POST' });
+                const result = await res.json();
+                renderPipelineComplete(result);
+            } catch (err) {
+                console.error(err);
+                alert("Pipeline Execution Failed");
+            }
+        }
+
+        function renderPipelineStart() {
+            const container = document.getElementById('pipelineViz');
+            container.innerHTML = ''; // Clear
+            document.getElementById('validationResult').classList.remove('visible');
+            
+            const steps = [
+                "1. Data Collection",
+                "2. TTL Transformation",
+                "3. Fuseki Load",
+                "4. SPARQL Feature Extraction",
+                "5. Policy Decision Engine",
+                "6. BC Procedure Verification",
+                "7. Quality Gate"
+            ];
+
+            steps.forEach((step, idx) => {
+                const div = document.createElement('div');
+                div.className = 'step-item pending';
+                div.id = `step-${idx}`;
+                div.innerHTML = `
+                    <div class="step-status-icon">○</div>
+                    <div class="step-content">
+                        <div class="step-title">${step}</div>
+                        <div class="step-message">Pending...</div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function renderPipelineComplete(data) {
+            const logs = data.logs;
+            // Map logs to UI steps roughly
+            // Since the API returns sequential logs, we can just iterate the UI elements
+            // But lets match by name if possible or just index
+            
+            // For simplicity, we animate them one by one based on the log array
+            const container = document.getElementById('pipelineViz');
+            container.innerHTML = ''; 
+
+            let delay = 0;
+            
+            logs.forEach((log, index) => {
+                setTimeout(() => {
+                    const div = document.createElement('div');
+                    let statusClass = 'completed';
+                    let icon = '✓';
+                    
+                    if (log.status === 'FAILED') { statusClass = 'failed'; icon = '✕'; }
+                    if (log.status === 'ERROR') { statusClass = 'failed'; icon = '!'; }
+                    
+                    div.className = `step-item ${statusClass}`;
+                    div.innerHTML = `
+                        <div class="step-status-icon">${icon}</div>
+                        <div class="step-content">
+                            <div class="step-title">${log.step}</div>
+                            <div class="step-message">${log.message}</div>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                    div.scrollIntoView({ behavior: 'smooth' });
+                    
+                    // If this is the last one, show results
+                    if (index === logs.length - 1) {
+                         showFinalResult(data);
+                    }
+                }, delay);
+                delay += 300; // Stagger animation
+            });
+        }
+
+        function showFinalResult(data) {
+            const area = document.getElementById('validationResult');
+            const bcRes = data.bc_result;
+            
+            if (!bcRes) return;
+            
+            area.classList.add('visible');
+            
+            const bcBadge = document.getElementById('bcStatusBadge');
+            const gateBadge = document.getElementById('gateStatusBadge');
+
+            bcBadge.textContent = "BC: " + bcRes.status;
+            bcBadge.className = bcRes.status === 'PASS' ? 'badge badge-pass' : 'badge badge-fail';
+            
+            gateBadge.textContent = "GATE: " + (data.final_status === 'SUCCESS' ? 'OPEN' : 'CLOSED');
+            gateBadge.className = data.final_status === 'SUCCESS' ? 'badge badge-pass' : 'badge badge-fail';
+
+            const evidenceText = `Reason: ${bcRes.raw_bc_message}\nError Codes: ${JSON.stringify(bcRes.error_codes)}`;
+            document.getElementById('bcEvidence').textContent = evidenceText;
+
+            const fixDiv = document.getElementById('fixRecommendation');
+            if (bcRes.recommended_fix) {
+                fixDiv.style.display = 'block';
+                document.getElementById('fixText').textContent = bcRes.recommended_fix;
+            } else {
+                fixDiv.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>

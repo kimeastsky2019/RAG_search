@@ -1,16 +1,12 @@
 fastapi
 uvicorn[standard]
 python-multipart
-pytest
 pydantic
-cachetools
-
-# xAI SDK (version/name may vary depending on release)
-xai-sdk
 sqlmodel
 aiosqlite
-passlib[bcrypt]
+xai-sdk
 python-jose[cryptography]
-fastapi
-uvicorn
-python-multipart
+bcrypt
+cachetools
+python-dotenv
+pytest
